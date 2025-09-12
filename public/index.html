@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Listen2Me - 群里又发啥了？</title>
+  <style>
+    :root{
+      --primary: #0ea5e9; /* 天蓝 */
+      --primary-dark: #0288d1;
+      --bg: #f3fbff;
+      --card: #ffffff;
+      --muted: #6b7280;
+      --glass: rgba(255,255,255,0.6);
+      --radius: 12px;
+      --shadow: 0 8px 24px rgba(6,30,60,0.08);
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(180deg,var(--bg), #eef9ff);
+      color:#0f1724;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      padding:2.5rem 1rem;
+    }
+
+    .wrap{max-width:1200px;margin:0 auto}
+
+    /* Header */
+    .header{
+      display:flex;align-items:center;gap:1rem;padding:1rem 1.25rem;border-radius:18px;background:linear-gradient(90deg, rgba(14,165,233,0.12), rgba(2,136,209,0.06));box-shadow:var(--shadow);
+    }
+    .logo-wrap{display:flex;align-items:center;gap:1rem}
+    .logo{
+      width:68px;height:68px;border-radius:14px;display:inline-block;overflow:hidden;flex:0 0 68px;background:var(--card);box-shadow:0 6px 18px rgba(2,136,209,0.12);
+    }
+    .logo img{width:100%;height:100%;object-fit:contain;display:block}
+
+    .title h1{font-size:1.25rem;margin-bottom:0.25rem;color:var(--primary-dark)}
+    .title p{font-size:0.9rem;color:var(--muted)}
+
+    /* grid */
+    .dashboard{display:grid;grid-template-columns:1fr 360px;gap:1.25rem;margin-top:1.25rem}
+
+    /* cards */
+    .card{background:var(--card);border-radius:var(--radius);padding:1rem;box-shadow:var(--shadow)}
+    .card h3{font-size:1.05rem;margin-bottom:0.75rem;color:var(--primary-dark);display:flex;align-items:center;gap:0.5rem}
+    .card p{color:var(--muted)}
+
+    .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem}
+    .stat-item{background:linear-gradient(180deg, rgba(14,165,233,0.04), rgba(2,136,209,0.02));padding:0.75rem;border-radius:10px;text-align:center}
+    .stat-number{font-size:1.6rem;font-weight:700;color:var(--primary-dark)}
+    .stat-label{font-size:0.85rem;color:var(--muted);margin-top:0.35rem}
+
+    .status-row{display:flex;align-items:center;gap:0.6rem}
+    .status-indicator{width:12px;height:12px;border-radius:50%;display:inline-block}
+    .status-online{background:#27ae60}
+    .status-offline{background:#e74c3c}
+    .status-warning{background:#f59e0b}
+
+    .group-list{display:flex;gap:0.5rem;flex-wrap:wrap}
+    .group-badge{background:linear-gradient(90deg,var(--primary),var(--primary-dark));color:white;padding:0.35rem 0.7rem;border-radius:999px;font-size:0.82rem}
+
+    .event-list{max-height:420px;overflow:auto;display:flex;flex-direction:column;gap:0.6rem;padding-right:4px}
+    .event-item{padding:0.75rem;border-radius:10px;background:linear-gradient(180deg, #ffffff, rgba(14,165,233,0.03));border-left:4px solid var(--primary);box-shadow:0 3px 10px rgba(2,6,23,0.04)}
+    .event-item.todo{border-left-color:#ef4444}
+    .event-item.notification{border-left-color:#f59e0b}
+    .event-item.entertainment{border-left-color:#8b5cf6}
+    .event-title{font-weight:600;margin-bottom:0.35rem}
+    .event-meta{font-size:0.82rem;color:var(--muted)}
+
+    .controls{display:flex;gap:0.5rem;flex-wrap:wrap}
+    .button{background:var(--primary);color:white;border:none;padding:0.6rem 0.9rem;border-radius:10px;cursor:pointer;font-weight:600;box-shadow:0 6px 18px rgba(14,165,233,0.12)}
+    .button:hover{background:var(--primary-dark);transform:translateY(-1px)}
+    .button.ghost{background:transparent;color:var(--primary-dark);border:1px solid rgba(14,165,233,0.12);box-shadow:none}
+
+    .rss-links{display:flex;gap:0.5rem;flex-wrap:wrap}
+    .rss-link{display:inline-flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;border-radius:8px;background:rgba(14,165,233,0.04);text-decoration:none;color:var(--primary-dark);font-weight:600}
+
+    .right-column{display:flex;flex-direction:column;gap:1rem}
+
+    @media (max-width:980px){
+      .dashboard{grid-template-columns:1fr;}
+      .logo{width:56px;height:56px}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="header" role="banner">
+      <div class="logo-wrap">
+        <div class="logo" aria-hidden="true">
+          <img src="logo.png" alt="Listen2Me" />
+        </div>
+        <div class="title">
+          <h1>Listen2Me</h1>
+          <p>QQ群聊消息自动化 · 事件识别与待办生成</p>
+        </div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:0.5rem;align-items:center">
+        <button class="button ghost" onclick="location.reload();">刷新</button>
+        <button class="button" onclick="triggerAnalysis(this)">手动触发AI分析</button>
+      </div>
+    </header>
+
+    <main class="dashboard" role="main" aria-live="polite">
+      <section style="display:flex;flex-direction:column;gap:1rem">
+        <div class="card" aria-labelledby="sys-title">
+          <h3 id="sys-title">🔧 系统状态</h3>
+          <div class="stat-grid">
+            <div class="stat-item">
+              <div class="stat-number" id="totalMessages">-</div>
+              <div class="stat-label">总消息数</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-number" id="processedMessages">-</div>
+              <div class="stat-label">已处理</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-number" id="totalEvents">-</div>
+              <div class="stat-label">识别事件</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-number" id="processingRate">-</div>
+              <div class="stat-label">处理率</div>
+            </div>
+          </div>
+
+          <div style="margin-top:0.8rem;display:flex;justify-content:space-between;align-items:center">
+            <div class="status-row">
+              <span class="status-indicator status-offline" id="systemStatus"></span>
+              <div id="systemStatusText">加载中...</div>
+            </div>
+            <div style="font-size:0.9rem;color:var(--muted)">最后更新: <span id="lastUpdate">-</span></div>
+          </div>
+        </div>
+
+        <div class="card" aria-labelledby="events-title">
+          <h3 id="events-title">📋 最近识别的事件</h3>
+          <div class="event-list" id="eventList">
+            <div style="text-align:center;color:var(--muted);padding:2rem">加载中…</div>
+          </div>
+        </div>
+
+      </section>
+
+      <aside class="right-column" aria-label="侧栏">
+        <div class="card">
+          <h3>📡 监听配置</h3>
+          <p><strong>WebSocket:</strong></p>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem">
+            <div><span class="status-indicator" id="wsStatus"></span> <span id="wsStatusText">检查中…</span></div>
+            <div style="font-size:0.85rem;color:var(--muted)"><small id="wsDetails"></small></div>
+          </div>
+
+          <div style="margin-top:0.8rem">
+            <p style="margin-bottom:0.35rem"><strong>监听群：</strong></p>
+            <div class="group-list" id="groupList"><div style="color:var(--muted)">加载中…</div></div>
+          </div>
+
+          <div style="margin-top:0.8rem">
+            <p><strong>AI分析:</strong> <span id="aiStatus">检查中…</span></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>⏰ 定时任务</h3>
+          <div id="schedulerInfo"><div style="color:var(--muted)">加载中…</div></div>
+        </div>
+
+        <div class="card">
+          <h3>📰 RSS订阅</h3>
+          <div style="margin-bottom:0.5rem;color:var(--muted)">订阅以下链接获取最新事件</div>
+          <div class="rss-links">
+            <a class="rss-link" href="/rss" target="_blank">全部事件</a>
+            <a class="rss-link" href="/rss/todo" target="_blank">待办</a>
+            <a class="rss-link" href="/rss/notification" target="_blank">通知</a>
+          </div>
+          <div style="margin-top:0.8rem;font-size:0.9rem;color:var(--muted)" id="rssStats">加载中…</div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script>
+    let isAnalyzing = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshAll();
+      setInterval(() => { if (!isAnalyzing) refreshAll(); }, 30000);
+    });
+
+    function refreshAll(){
+      loadSystemStatus(); loadEvents(); loadSchedulerStatus(); loadRSSStats(); loadWebSocketStatus();
+    }
+
+    async function loadSystemStatus(){
+      try{
+        const [statusRes, statsRes, analysisRes] = await Promise.all([
+          fetch('/api/status'), fetch('/api/stats'), fetch('/api/analysis/stats')
+        ]);
+        const status = await statusRes.json();
+        const stats = await statsRes.json();
+        const analysis = await analysisRes.json();
+
+        document.getElementById('totalMessages').textContent = stats.total_messages_received || '0';
+        document.getElementById('processedMessages').textContent = stats.total_messages_processed || '0';
+        document.getElementById('totalEvents').textContent = stats.total_events_found || '0';
+        document.getElementById('processingRate').textContent = status.processing_rate || '0%';
+
+        const statusIndicator = document.getElementById('systemStatus');
+        const statusText = document.getElementById('systemStatusText');
+
+        if (analysis.analysis_enabled) {
+          statusIndicator.className = 'status-indicator status-online';
+          statusText.textContent = 'AI分析已启用';
+        } else {
+          statusIndicator.className = 'status-indicator status-warning';
+          statusText.textContent = 'AI分析未配置';
+        }
+
+        const groupList = document.getElementById('groupList');
+        if (status.listened_groups && status.listened_groups.length) {
+          groupList.innerHTML = status.listened_groups.map(g => `<span class="group-badge">${escapeHtml(g)}</span>`).join('');
+        } else {
+          groupList.innerHTML = '<span style="color:#ef4444">未配置监听群聊</span>';
+        }
+
+        const aiStatus = document.getElementById('aiStatus');
+        if (analysis.analysis_enabled) {
+          const lastAnalysis = analysis.last_analysis_time ? new Date(analysis.last_analysis_time).toLocaleString('zh-CN') : '从未运行';
+          aiStatus.innerHTML = `<span style="color:#27ae60">已启用</span>（最后分析: ${lastAnalysis}）`;
+        } else {
+          aiStatus.innerHTML = '<span style="color:#ef4444">未启用</span>';
+        }
+
+        document.getElementById('lastUpdate').textContent = new Date().toLocaleString('zh-CN');
+      }catch(err){
+        console.error(err); showError('加载系统状态失败: '+ (err.message || err));
+      }
+    }
+
+    async function loadEvents(){
+      try{
+        const res = await fetch('/api/events?limit=20');
+        const events = await res.json();
+        const list = document.getElementById('eventList');
+        if (!events || events.length === 0) {
+          list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:2rem">暂无识别的事件</div>';
+          return;
+        }
+        list.innerHTML = events.map(e => renderEventItem(e)).join('');
+      }catch(err){
+        console.error(err); document.getElementById('eventList').innerHTML = '<div class="card" style="background:transparent;padding:0"><div style="color:#ef4444">加载事件失败: '+escapeHtml(err.message || err)+'</div></div>';
+      }
+    }
+
+    function renderEventItem(event){
+      const typeEmoji = {'todo':'📝','notification':'📢','entertainment':'🎉'};
+      const priorityEmoji = {'low':'🔵','medium':'🟡','high':'🔴'};
+      const createdAt = event.created_at ? new Date(event.created_at).toLocaleString('zh-CN') : '-';
+      const dueDate = event.due_date ? new Date(event.due_date).toLocaleString('zh-CN') : '';
+      const safeTitle = escapeHtml(event.title || '无标题');
+      const safeDesc = escapeHtml(event.description || '');
+      const confidence = (event.confidence != null) ? (Math.round(event.confidence * 1000)/10) + '%' : '-';
+
+      return `
+        <div class="event-item ${escapeHtml(event.event_type || '')}">
+          <div class="event-title">${typeEmoji[event.event_type]||'📄'} ${priorityEmoji[event.priority]||''} ${safeTitle}</div>
+          <div style="margin:0.4rem 0;font-size:0.93rem;color:#0f1724;">${safeDesc}</div>
+          <div class="event-meta">群聊: ${escapeHtml(event.group_id||'-')} | 创建: ${createdAt} | 置信度: ${confidence} ${dueDate? '| 截止: '+dueDate : ''}</div>
+        </div>`;
+    }
+
+    async function loadSchedulerStatus(){
+      try{
+        const res = await fetch('/api/scheduler/status');
+        const status = await res.json();
+        const el = document.getElementById('schedulerInfo');
+        el.innerHTML = (status.jobs || []).map(job => {
+          const nextRun = job.nextDate ? new Date(job.nextDate).toLocaleString('zh-CN') : '未安排';
+          const lastRun = job.lastDate ? new Date(job.lastDate).toLocaleString('zh-CN') : '从未运行';
+          return `<div style="padding:0.6rem;border-radius:8px;background:linear-gradient(180deg, rgba(2,136,209,0.03), rgba(14,165,233,0.02));margin-bottom:0.6rem"><div style="font-weight:600;margin-bottom:0.35rem"><span class="status-indicator ${job.running? 'status-online': 'status-offline'}"></span> ${escapeHtml(job.description||'任务')}</div><div style="font-size:0.88rem;color:var(--muted)">下次运行: ${nextRun}<br>上次运行: ${lastRun}</div></div>`;
+        }).join('') || '<div style="color:var(--muted)">无定时任务</div>';
+      }catch(err){ console.error(err); document.getElementById('schedulerInfo').innerHTML = '<div style="color:#ef4444">加载调度器状态失败: '+escapeHtml(err.message||err)+'</div>'; }
+    }
+
+    async function loadRSSStats(){
+      try{
+        const res = await fetch('/api/rss/stats');
+        const stats = await res.json();
+        const el = document.getElementById('rssStats');
+        const byType = stats.by_type || {};
+        el.innerHTML = `<div><strong>活跃事件:</strong> ${stats.total_active_events || 0}</div><div style="margin-top:0.4rem;color:var(--muted)">${Object.entries(byType).map(([k,v])=> `${escapeHtml(k)}: ${v.count}`).join(' | ')}</div>`;
+      }catch(err){ console.error(err); document.getElementById('rssStats').innerHTML = '<div style="color:#ef4444">加载RSS统计失败</div>'; }
+    }
+
+    async function loadWebSocketStatus(){
+      try{
+        const res = await fetch('/api/websocket/status');
+        const data = await res.json();
+        const statusIndicator = document.getElementById('wsStatus');
+        const statusText = document.getElementById('wsStatusText');
+        const details = document.getElementById('wsDetails');
+
+        if (data.connected && data.napCatCount > 0) {
+          statusIndicator.className = 'status-indicator status-online';
+          statusText.textContent = `已连接 (${data.napCatCount} 个NapCat)`;
+          const napCatClients = (data.clients||[]).filter(c=>c.isNapCat);
+          details.textContent = napCatClients.map(c=>`NapCat(${c.selfId||'?'}) ${c.ip||''} ${c.connectedAt? '连接于 '+ new Date(c.connectedAt).toLocaleString('zh-CN') : ''}`).join('\n');
+        } else if ((data.clientCount||0) > 0) {
+          statusIndicator.className = 'status-indicator status-warning';
+          statusText.textContent = `有连接但非NapCat (${data.clientCount} 个)`;
+          details.textContent = '等待NapCat连接…';
+        } else {
+          statusIndicator.className = 'status-indicator status-offline';
+          statusText.textContent = '等待连接';
+          details.textContent = `WebSocket 服务: 端口 ${data.server?.port || 'Unknown'}`;
+        }
+      }catch(err){ console.error(err); document.getElementById('wsStatus').className = 'status-indicator status-offline'; document.getElementById('wsStatusText').textContent = '状态获取失败'; document.getElementById('wsDetails').textContent = '无法连接到 WebSocket'; }
+    }
+
+    // 触发分析，接受按钮元素以便在请求期间禁用并显示状态
+    async function triggerAnalysis(button){
+      if (isAnalyzing) return;
+      isAnalyzing = true;
+      const original = button.innerHTML;
+      button.innerHTML = '分析中...';
+      button.disabled = true;
+      try{
+        const res = await fetch('/api/analysis/trigger',{method:'POST'});
+        const result = await res.json();
+        if (result.success) { showSuccess(`分析完成：处理 ${result.processed} 条，识别 ${result.events?.length || 0} 个事件`); refreshAll(); }
+        else { showError('分析失败: ' + (result.error || '未知错误')); }
+      }catch(err){ console.error(err); showError('触发分析失败: '+(err.message||err)); }
+      finally{ isAnalyzing = false; button.innerHTML = original; button.disabled = false; }
+    }
+
+    // 反馈 / 辅助
+    function showError(message){
+      const container = document.querySelector('.wrap');
+      const d = document.createElement('div');
+      d.style.cssText = 'background:#fff0f0;color:#b91c1c;padding:0.8rem;border-radius:10px;margin:0.8rem 0;box-shadow:0 6px 18px rgba(185,28,28,0.06)';
+      d.textContent = message;
+      container.insertBefore(d, container.firstChild);
+      setTimeout(()=> d.remove(), 6000);
+    }
+
+    function showSuccess(message){
+      const container = document.querySelector('.wrap');
+      const d = document.createElement('div');
+      d.style.cssText = 'background:#ecfdf5;color:#065f46;padding:0.8rem;border-radius:10px;margin:0.8rem 0;box-shadow:0 6px 18px rgba(6,95,70,0.06)';
+      d.textContent = message;
+      container.insertBefore(d, container.firstChild);
+      setTimeout(()=> d.remove(), 5000);
+    }
+
+    // 简单的 XSS 转义（用于渲染服务端返回的少量文本）
+    function escapeHtml(str){ if (str==null) return ''; return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  </script>
+</body>
+</html>

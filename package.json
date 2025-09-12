@@ -1,0 +1,40 @@
+{
+  "name": "listen2me",
+  "version": "1.0.0",
+  "description": "Automated todo generation platform listening to QQ group messages via NapCat",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "cors": "^2.8.5",
+    "cron": "^3.1.6",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "rss": "^1.2.2",
+    "sqlite3": "^5.1.6",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "qq",
+    "bot",
+    "napcat",
+    "onebot",
+    "todo",
+    "webhook"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
