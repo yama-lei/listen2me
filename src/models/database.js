@@ -386,6 +386,21 @@ class Database {
         });
     }
 
+    // 删除事件
+    deleteEvent(eventId) {
+        return new Promise((resolve, reject) => {
+            const sql = `DELETE FROM analyzed_events WHERE id = ?`;
+            
+            this.db.run(sql, [eventId], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes > 0);
+                }
+            });
+        });
+    }
+
     // 获取过期事件统计
     getExpiredEventsStats() {
         return new Promise((resolve, reject) => {
@@ -441,7 +456,20 @@ class Database {
             });
         });
     }
-
+    getGroupHistoryMessages(groupId, limit = 10) {
+        return new Promise((resolve, reject) => {
+            const sql = `
+                SELECT * FROM messages WHERE group_id = ? ORDER BY timestamp DESC LIMIT ?
+            `;
+            this.db.all(sql, [groupId, limit], (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
+            });
+        });
+    }
     // 关闭数据库连接
     close() {
         return new Promise((resolve) => {

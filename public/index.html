@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Listen2Me - 群里又发啥了？</title>
+  <title>Listen2Me -  群里又发啥了？</title>
+  <link rel="icon" href="logo.png" type="image/x-icon">
   <style>
     :root{
       --primary: #0ea5e9; /* 天蓝 */
@@ -96,7 +97,7 @@
           <img src="logo.png" alt="Listen2Me" />
         </div>
         <div class="title">
-          <h1>Listen2Me</h1>
+          <a href="https://github.com/yama-lei/listen2me" style="text-decoration: none;"><h1>Listen2Me</h1></a>
           <p>QQ群聊消息自动化 · 事件识别与待办生成</p>
         </div>
       </div>
@@ -206,8 +207,8 @@
         const stats = await statsRes.json();
         const analysis = await analysisRes.json();
 
-        document.getElementById('totalMessages').textContent = stats.total_messages_received || '0';
-        document.getElementById('processedMessages').textContent = stats.total_messages_processed || '0';
+        document.getElementById('totalMessages').textContent = status.total_received || '0';
+        document.getElementById('processedMessages').textContent = status.total_processed || '0';
         document.getElementById('totalEvents').textContent = stats.total_events_found || '0';
         document.getElementById('processingRate').textContent = status.processing_rate || '0%';
 

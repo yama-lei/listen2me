@@ -51,7 +51,7 @@ class LoggingService {
                 ...data
             };
 
-            const logLine = JSON.stringify(logEntry) + '\n';
+            const logLine = JSON.stringify(logEntry) + '\n\n';
             fs.appendFileSync(logFile, logLine, 'utf8');
         } catch (error) {
             console.error(`写入日志失败 (${logType}):`, error);

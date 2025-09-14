@@ -13,6 +13,7 @@ const SchedulerService = require('./services/schedulerService');
 const RSSService = require('./services/rssService');
 const WebSocketService = require('./services/websocketService');
 const LoggingService = require('./services/loggingService');
+const AdminService = require('./services/adminService');
 
 class Listen2MeApp {
     constructor() {
@@ -25,6 +26,7 @@ class Listen2MeApp {
         this.rssService = null;
         this.websocketService = null;
         this.loggingService = null;
+        this.adminService = null;
         
         this.config = {
             PORT: process.env.WEBSOCKET_PORT || 8081,  // 现在主端口就是WebSocket端口
@@ -43,7 +45,8 @@ class Listen2MeApp {
             AI_SHORT_MESSAGE_BATCH_SIZE: process.env.AI_SHORT_MESSAGE_BATCH_SIZE,
             RSS_TITLE: process.env.RSS_TITLE,
             RSS_DESCRIPTION: process.env.RSS_DESCRIPTION,
-            RSS_BASE_URL: process.env.RSS_BASE_URL
+            RSS_BASE_URL: process.env.RSS_BASE_URL,
+            ADMIN_ID: process.env.ADMIN_ID
         };
 
         this.init();
@@ -60,20 +63,26 @@ class Listen2MeApp {
             // 初始化消息过滤器
             this.messageFilter = new MessageFilter(this.config);
             
-            // 初始化消息控制器
-            this.messageController = new MessageController(this.database, this.messageFilter, this.loggingService);
-            
             // 初始化AI分析服务
             this.aiAnalysisService = new AIAnalysisService(this.config, this.database, this.loggingService);
+            
+            // 初始化WebSocket服务
+            this.websocketService = new WebSocketService(this.config, this.database, this.messageFilter, null, this.loggingService);
+            
+            // 初始化管理员服务
+            this.adminService = new AdminService(this.config, this.database, this.aiAnalysisService, this.loggingService, this.websocketService);
+            
+            // 初始化消息控制器
+            this.messageController = new MessageController(this.database, this.messageFilter, this.loggingService, this.adminService);
+            
+            // 更新WebSocket服务的消息控制器引用
+            this.websocketService.messageController = this.messageController;
             
             // 初始化调度服务
             this.schedulerService = new SchedulerService(this.aiAnalysisService, this.config, this.database);
             
             // 初始化RSS服务
             this.rssService = new RSSService(this.config, this.database);
-            
-            // 初始化WebSocket服务
-            this.websocketService = new WebSocketService(this.config, this.database, this.messageFilter, this.messageController, this.loggingService);
             
             // 设置Express中间件
             this.setupMiddlewares();
@@ -220,6 +229,25 @@ class Listen2MeApp {
             }
         });
 
+        this.app.delete('/api/events/:id', async (req, res) => {
+            try {
+                const eventId = parseInt(req.params.id);
+                if (isNaN(eventId)) {
+                    return res.status(400).json({ error: '无效的事件ID' });
+                }
+
+                const success = await this.database.deleteEvent(eventId);
+                if (success) {
+                    res.json({ success: true, message: '事件已删除' });
+                } else {
+                    res.status(404).json({ error: '事件不存在' });
+                }
+            } catch (error) {
+                console.error('删除事件失败:', error);
+                res.status(500).json({ error: '删除事件失败' });
+            }
+        });
+
         // RSS相关路由
         this.app.get('/rss', async (req, res) => {
             try {
@@ -335,6 +363,36 @@ class Listen2MeApp {
             } catch (error) {
                 console.error('清理日志失败:', error);
                 res.status(500).json({ error: '清理日志失败' });
+            }
+        });
+
+        // 管理员相关接口
+        this.app.get('/api/admin/status', (req, res) => {
+            try {
+                const status = this.adminService.getStatus();
+                res.json(status);
+            } catch (error) {
+                console.error('获取管理员服务状态失败:', error);
+                res.status(500).json({ error: '获取管理员服务状态失败' });
+            }
+        });
+
+        this.app.post('/api/admin/send-message', async (req, res) => {
+            try {
+                const { message } = req.body;
+                if (!message) {
+                    return res.status(400).json({ error: '消息内容不能为空' });
+                }
+
+                const success = await this.adminService.sendMessageToAdmin(message);
+                if (success) {
+                    res.json({ success: true, message: '消息已发送给管理员' });
+                } else {
+                    res.status(500).json({ success: false, error: '发送消息失败' });
+                }
+            } catch (error) {
+                console.error('发送消息给管理员失败:', error);
+                res.status(500).json({ error: '发送消息失败' });
             }
         });
 

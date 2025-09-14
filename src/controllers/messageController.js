@@ -5,10 +5,11 @@ const TimeUtils = require('../utils/timeUtils');
  * 处理来自WebSocket的OneBot 11事件
  */
 class MessageController {
-    constructor(database, messageFilter, loggingService) {
+    constructor(database, messageFilter, loggingService, adminService) {
         this.database = database;
         this.messageFilter = messageFilter;
         this.loggingService = loggingService;
+        this.adminService = adminService;
         this.processedCount = 0;
         this.totalReceived = 0;
     }
@@ -24,6 +25,12 @@ class MessageController {
             // 记录接收到的事件
             console.log(`接收到事件: ${event.post_type} - ${event.message_type || 'N/A'}`);
             
+            // 检查是否为管理员私聊消息
+            if (this.adminService && this.adminService.isAdminMessage(event)) {
+                console.log('检测到管理员私聊消息，交由管理员服务处理');
+                return await this.adminService.handleAdminMessage(event);
+            }
+
             // 检查是否应该处理该事件
             if (!this.messageFilter.shouldProcessEvent(event)) {
                 // 记录被忽略的消息

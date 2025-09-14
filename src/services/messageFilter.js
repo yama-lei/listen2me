@@ -33,17 +33,20 @@ class MessageFilter {
             return false;
         }
 
-        // 只处理群消息
-        if (event.message_type !== 'group') {
-            console.log(`跳过非群消息: ${event.message_type}`);
+        // 处理群消息和私聊消息
+        if (event.message_type !== 'group' && event.message_type !== 'private') {
+            console.log(`跳过非群消息/私聊消息: ${event.message_type}`);
             return false;
         }
 
-        // 检查是否在监听的群聊中
-        if (!this.listenGroupIds.has(event.group_id)) {
-            console.log(`群聊 ${event.group_id} 不在监听列表中，跳过`);
-            return false;
+        // 对于群消息，检查是否在监听的群聊中
+        if (event.message_type === 'group') {
+            if (!this.listenGroupIds.has(event.group_id)) {
+                console.log(`群聊 ${event.group_id} 不在监听列表中，跳过`);
+                return false;
+            }
         }
+        // 对于私聊消息，直接通过（由管理员服务进一步处理）
 
         // 检查消息内容
         if (!event.message || (!event.raw_message && !event.message)) {

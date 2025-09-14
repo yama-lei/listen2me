@@ -72,8 +72,8 @@ class AIAnalysisService {
 
             for (const [groupId, groupMessages] of Object.entries(messagesByGroup)) {
                 console.log(`分析群聊 ${groupId} 的 ${groupMessages.length} 条消息`);
-                
-                const { events, processedIds } = await this.analyzeGroupMessagesWithStrategy(groupId, groupMessages);
+                const groupHistoryMessages = await this.database.getGroupHistoryMessages(groupId);
+                const { events, processedIds } = await this.analyzeGroupMessagesWithStrategy(groupId, groupMessages, groupHistoryMessages);
                 allEvents.push(...events);
                 processedMessageIds.push(...processedIds);
             }
@@ -126,7 +126,7 @@ class AIAnalysisService {
     /**
      * 使用新策略分析群聊消息
      */
-    async analyzeGroupMessagesWithStrategy(groupId, messages) {
+    async analyzeGroupMessagesWithStrategy(groupId, messages, groupHistoryMessages) {
         if (!this.config.apiKey) {
             console.warn('未配置API密钥，跳过AI分析');
             return { events: [], processedIds: [] };
@@ -154,7 +154,7 @@ class AIAnalysisService {
         for (const message of longMessages) {
             try {
                 console.log(`立即分析长消息/管理员消息: ${message.id}`);
-                const events = await this.analyzeGroupMessages(groupId, [message]);
+                const events = await this.analyzeGroupMessages(groupId, [message], groupHistoryMessages);
                 allEvents.push(...events);
                 processedIds.push(message.id);
             } catch (error) {
@@ -170,7 +170,7 @@ class AIAnalysisService {
             for (const batch of batches) {
                 try {
                     console.log(`批量分析短消息: ${batch.length} 条`);
-                    const events = await this.analyzeGroupMessages(groupId, batch);
+                    const events = await this.analyzeGroupMessages(groupId, batch, groupHistoryMessages);
                     allEvents.push(...events);
                     processedIds.push(...batch.map(m => m.id));
                 } catch (error) {
@@ -204,7 +204,7 @@ class AIAnalysisService {
     /**
      * 分析特定群聊的消息
      */
-    async analyzeGroupMessages(groupId, messages) {
+    async analyzeGroupMessages(groupId, messages, groupHistoryMessages) {
         if (!this.config.apiKey) {
             console.warn('未配置API密钥，跳过AI分析');
             return [];
@@ -212,7 +212,7 @@ class AIAnalysisService {
 
         try {
             // 构建上下文
-            const context = this.buildAnalysisContext(messages);
+            const context = this.buildAnalysisContext(messages, groupHistoryMessages);
             
             // 调用LLM分析
             const analysisContext = {
@@ -236,10 +236,11 @@ class AIAnalysisService {
     /**
      * 构建分析上下文
      */
-    buildAnalysisContext(messages) {
+    buildAnalysisContext(messages, groupHistoryMessages) {
         const sortedMessages = messages.sort((a, b) => a.timestamp - b.timestamp);
-        
+        const sortedGroupHistoryMessages = groupHistoryMessages.sort((a, b) => a.timestamp - b.timestamp);
         let context = '以下是最近的群聊消息记录：\n\n';
+        context += `<待分析消息>`;
         
         sortedMessages.forEach((message, index) => {
             const time = TimeUtils.timestampToBeijingString(message.timestamp);
@@ -247,9 +248,19 @@ class AIAnalysisService {
             //context += `[${time}] ${nickname}: ${message.message_content}\n`;
             context += `${nickname} 于 ${time} 发送了消息: ${message.message_content}\n`;
         });
-        
+        context += `</待分析消息>`;
+        context += `<历史消息>`;
+
+        sortedGroupHistoryMessages.forEach((message, index) => {
+            const time = TimeUtils.timestampToBeijingString(message.timestamp);
+            const nickname = message.sender_nickname || `用户${message.user_id}`;
+            context += `${nickname} 于 ${time} 发送了消息: ${message.message_content}\n`;
+        });
+        context += `</历史消息>`;
+
         return context;
     }
+
 
     /**
      * 调用LLM进行分析
@@ -331,15 +342,16 @@ class AIAnalysisService {
       ]]>
     </output>
   </example>
-
-  <input>
-    群聊记录：  
-    ${context}
-  </input>
 </task>
 `;
+const userPrompt = `
+<input>
+  群聊记录：
+  ${context}
+</input>
+`;
 
-        const requestData = {
+const requestData = {
             model: this.config.model,
             messages: [
                 {
