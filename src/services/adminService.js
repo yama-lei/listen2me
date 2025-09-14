@@ -184,7 +184,7 @@ class AdminService {
             if (eventsByType.todo.length > 0) {
                 message += `📝 待办事项 (${eventsByType.todo.length}个):\n`;
                 eventsByType.todo.forEach((event, index) => {
-                    message += `${index + 1}. [ID:${event.id}] ${event.title}\n`;
+                    message += `[ID:${event.id}] ${event.title}\n`;
                     if (event.due_date) {
                         const dueDate = new Date(event.due_date);
                         const dueDateStr = TimeUtils.timestampToBeijingString(Math.floor(dueDate.getTime() / 1000));
@@ -222,7 +222,7 @@ class AdminService {
                 });
             }
 
-            message += `\n💡 提示: 发送 "删除 [事件ID]" 可以删除指定事件`;
+            message += `\n💡 提示: 发送 "del [事件ID]" 可以删除指定事件`;
 
             await this.sendMessageToAdmin(message);
             return { status: 'processed', command: 'list_all', events_count: events.length };

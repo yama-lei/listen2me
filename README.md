@@ -23,6 +23,7 @@ NapCat官方文档：https://napneko.github.io/
 
 1. 安装NapCat
 2. 在NapCat配置中添加WebSocket反向连接：
+> 可以登录napcat的webui进行配置，napcat的webui默认端口为6099
 ```json
 {
   "reverseWs": {
@@ -44,8 +45,6 @@ NapCat官方文档：https://napneko.github.io/
 npm install
 ```
 
-
-
 2. 启动服务
 
 ```bash
@@ -55,6 +54,9 @@ npm run dev
 npm start
 ```
 ### 使用Docker部署
+#### dokcer的一键部署
+运行start.sh即可构建docker并且运行
+
 #### 1. 构建docker image
 使用docker build . -t '容器的名字'，从dockerfile构建镜像
 
@@ -96,6 +98,10 @@ DATABASE_PATH=./data/listen2me.db
 RSS_TITLE=Listen2Me Todo Feed
 RSS_DESCRIPTION=Automated todo and events from monitored groups
 RSS_BASE_URL=http://localhost:8080
+
+#管理员qq配置
+ADMIN_ID=1234567
+
 ```
 
 ### 前端界面
