@@ -103,12 +103,23 @@ class MessageFilter {
     }
 
     /**
+     * 检查发送者是否为管理员或群主
+     * @param {Object} event OneBot 11事件
+     * @returns {boolean} 是否为管理员或群主
+     */
+    isAdminOrOwner(event) {
+        const role = event.sender?.role;
+        return role === 'admin' || role === 'owner';
+    }
+
+    /**
      * 将OneBot事件转换为数据库存储格式
      * @param {Object} event OneBot 11事件
      * @returns {Object} 数据库存储格式的消息对象
      */
     transformEventToMessage(event) {
         const messageText = this.extractMessageText(event);
+        const isAdmin = this.isAdminOrOwner(event);
         
         return {
             message_id: event.message_id,
@@ -116,59 +127,24 @@ class MessageFilter {
             message_type: event.message_type,
             sub_type: event.sub_type || null,
             group_id: event.group_id,
+            group_name: event.peerName || event.group_name || null,
             user_id: event.user_id,
             sender_nickname: event.sender?.nickname || null,
             sender_role: event.sender?.role || null,
             message_content: messageText,
             raw_message: event.raw_message || JSON.stringify(event.message),
-            timestamp: event.time
+            timestamp: event.time,
+            is_admin_message: isAdmin
         };
     }
 
     /**
-     * 检查消息是否可能包含待办事项、通知或活动信息
+     * 检查消息长度是否超过阈值
      * @param {string} messageText 消息文本
-     * @returns {Object} 包含可能性评分的对象
+     * @returns {boolean} 是否超过长度阈值
      */
-    analyzeMessagePotential(messageText) {
-        const text = messageText.toLowerCase();
-        
-        // 待办事项关键词
-        const todoKeywords = [
-            '待办', '要做', '需要', '记得', '别忘', '提醒', '安排',
-            '计划', '任务', '完成', '截止', '期限', '明天', '后天',
-            '下周', '下月', 'todo', '要', '得', '该'
-        ];
-        
-        // 通知关键词
-        const notificationKeywords = [
-            '通知', '公告', '提醒', '注意', '重要', '紧急', '消息',
-            '告知', '宣布', '声明', '发布', '更新', '变更', '取消'
-        ];
-        
-        // 文娱活动关键词
-        const entertainmentKeywords = [
-            '活动', '聚会', '聚餐', '游戏', '电影', 'ktv', '旅游',
-            '比赛', '演出', '展览', 'party', '约', '一起', '参加',
-            '报名', '组队', '开黑', '打游戏'
-        ];
-
-        const calculateScore = (keywords) => {
-            let score = 0;
-            keywords.forEach(keyword => {
-                if (text.includes(keyword)) {
-                    score += 1;
-                }
-            });
-            return Math.min(score / keywords.length, 1); // 标准化到0-1
-        };
-
-        return {
-            todo_potential: calculateScore(todoKeywords),
-            notification_potential: calculateScore(notificationKeywords),
-            entertainment_potential: calculateScore(entertainmentKeywords),
-            has_potential: calculateScore([...todoKeywords, ...notificationKeywords, ...entertainmentKeywords]) > 0
-        };
+    isLongMessage(messageText) {
+        return messageText && messageText.length > 50;
     }
 }
 

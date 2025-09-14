@@ -265,13 +265,11 @@
       const dueDate = event.due_date ? new Date(event.due_date).toLocaleString('zh-CN') : '';
       const safeTitle = escapeHtml(event.title || '无标题');
       const safeDesc = escapeHtml(event.description || '');
-      const confidence = (event.confidence != null) ? (Math.round(event.confidence * 1000)/10) + '%' : '-';
-
       return `
         <div class="event-item ${escapeHtml(event.event_type || '')}">
           <div class="event-title">${typeEmoji[event.event_type]||'📄'} ${priorityEmoji[event.priority]||''} ${safeTitle}</div>
           <div style="margin:0.4rem 0;font-size:0.93rem;color:#0f1724;">${safeDesc}</div>
-          <div class="event-meta">群聊: ${escapeHtml(event.group_id||'-')} | 创建: ${createdAt} | 置信度: ${confidence} ${dueDate? '| 截止: '+dueDate : ''}</div>
+          <div class="event-meta">群聊: ${escapeHtml(event.group_name || event.group_id || '-')} | 创建: ${createdAt} ${dueDate? '| 截止: '+dueDate : ''}</div>
         </div>`;
     }
 

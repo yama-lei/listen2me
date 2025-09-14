@@ -1,11 +1,14 @@
+const TimeUtils = require('../utils/timeUtils');
+
 /**
  * 消息控制器
  * 处理来自WebSocket的OneBot 11事件
  */
 class MessageController {
-    constructor(database, messageFilter) {
+    constructor(database, messageFilter, loggingService) {
         this.database = database;
         this.messageFilter = messageFilter;
+        this.loggingService = loggingService;
         this.processedCount = 0;
         this.totalReceived = 0;
     }
@@ -23,6 +26,9 @@ class MessageController {
             
             // 检查是否应该处理该事件
             if (!this.messageFilter.shouldProcessEvent(event)) {
+                // 记录被忽略的消息
+                const messageData = this.messageFilter.transformEventToMessage(event);
+                this.loggingService.logMessage(messageData, 'ignored');
                 return { status: 'ignored' };
             }
 
@@ -33,25 +39,43 @@ class MessageController {
             const messageId = await this.database.insertMessage(messageData);
             this.processedCount++;
             
+            // 记录处理的消息
+            this.loggingService.logMessage(messageData, 'processed');
+            
             console.log(`消息已保存到数据库，ID: ${messageId}, 群聊: ${messageData.group_id}, 用户: ${messageData.user_id}`);
             console.log(`消息内容: ${messageData.message_content.substring(0, 100)}${messageData.message_content.length > 100 ? '...' : ''}`);
             
             // 更新统计信息
             await this.updateStats();
             
-            // 分析消息潜在价值
-            const potential = this.messageFilter.analyzeMessagePotential(messageData.message_content);
-            if (potential.has_potential) {
-                console.log('消息具有分析价值:', potential);
+            // 检查是否为管理员消息或长消息
+            const isAdminMessage = messageData.is_admin_message;
+            const isLongMessage = this.messageFilter.isLongMessage(messageData.message_content);
+            
+            if (isAdminMessage) {
+                console.log('检测到管理员消息，将优先处理');
+            } else if (isLongMessage) {
+                console.log('检测到长消息，将优先处理');
             }
 
             return { 
                 status: 'processed',
-                message_id: messageId
+                message_id: messageId,
+                is_admin_message: isAdminMessage,
+                is_long_message: isLongMessage
             };
 
         } catch (error) {
             console.error('处理事件失败:', error);
+            
+            // 记录错误日志
+            this.loggingService.logError(error, {
+                event_type: event.post_type,
+                message_type: event.message_type,
+                group_id: event.group_id,
+                user_id: event.user_id
+            });
+            
             return { 
                 status: 'error', 
                 error: error.message 
@@ -66,7 +90,7 @@ class MessageController {
         try {
             await this.database.updateStat('total_messages_received', this.totalReceived);
             await this.database.updateStat('total_messages_processed', this.processedCount);
-            await this.database.updateStat('last_message_time', new Date().toISOString());
+            await this.database.updateStat('last_message_time', TimeUtils.getBeijingTimeISO());
         } catch (error) {
             console.error('更新统计信息失败:', error);
         }

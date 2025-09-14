@@ -5,9 +5,10 @@ const { CronJob } = require('cron');
  * 负责管理定时任务
  */
 class SchedulerService {
-    constructor(aiAnalysisService, config) {
+    constructor(aiAnalysisService, config, database) {
         this.aiAnalysisService = aiAnalysisService;
         this.config = config;
+        this.database = database;
         this.jobs = [];
         
         // 从配置获取分析间隔（分钟）
@@ -39,7 +40,22 @@ class SchedulerService {
             description: `AI消息分析 (每${this.analysisInterval}分钟)`
         });
 
-        console.log(`定时任务设置完成: AI分析将每${this.analysisInterval}分钟执行一次`);
+        // 过期事件检查任务 - 每小时执行一次
+        const expirationJob = new CronJob(
+            '0 * * * *', // 每小时的第0分钟执行
+            () => this.runExpirationCheck(),
+            null,
+            false,
+            'Asia/Shanghai'
+        );
+
+        this.jobs.push({
+            name: 'expiration_check',
+            job: expirationJob,
+            description: '过期事件检查 (每小时)'
+        });
+
+        console.log(`定时任务设置完成: AI分析将每${this.analysisInterval}分钟执行一次，过期检查每小时执行一次`);
     }
 
     /**
@@ -100,11 +116,42 @@ class SchedulerService {
     }
 
     /**
+     * 执行过期事件检查任务
+     */
+    async runExpirationCheck() {
+        const startTime = Date.now();
+        console.log(`[${new Date().toLocaleString()}] 开始执行过期事件检查任务`);
+        
+        try {
+            const expiredCount = await this.database.markExpiredEvents();
+            const duration = Date.now() - startTime;
+            
+            if (expiredCount > 0) {
+                console.log(`过期事件检查完成: 标记了 ${expiredCount} 个过期事件 (耗时: ${duration}ms)`);
+            } else {
+                console.log(`过期事件检查完成: 没有发现过期事件 (耗时: ${duration}ms)`);
+            }
+            
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            console.error(`过期事件检查失败 (耗时: ${duration}ms):`, error.message);
+        }
+    }
+
+    /**
      * 手动触发AI分析
      */
     async triggerAnalysis() {
         console.log('手动触发AI分析任务');
         return await this.runAnalysisTask();
+    }
+
+    /**
+     * 手动触发过期检查
+     */
+    async triggerExpirationCheck() {
+        console.log('手动触发过期事件检查任务');
+        return await this.runExpirationCheck();
     }
 
     /**

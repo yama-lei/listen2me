@@ -29,7 +29,8 @@ class RSSService {
         const {
             limit = 50,
             eventType = null,
-            includeCompleted = false
+            includeCompleted = false,
+            includeExpired = false
         } = options;
 
         // 创建RSS对象
@@ -37,7 +38,7 @@ class RSSService {
 
         try {
             // 获取事件数据
-            const events = await this.getEventsForFeed(limit, eventType, includeCompleted);
+            const events = await this.getEventsForFeed(limit, eventType, includeCompleted, includeExpired);
 
             // 添加事件到RSS feed
             events.forEach(event => {
@@ -55,7 +56,7 @@ class RSSService {
     /**
      * 获取用于RSS的事件数据
      */
-    async getEventsForFeed(limit, eventType, includeCompleted) {
+    async getEventsForFeed(limit, eventType, includeCompleted, includeExpired = false) {
         return new Promise((resolve, reject) => {
             let sql = `
                 SELECT * FROM analyzed_events 
@@ -65,6 +66,10 @@ class RSSService {
 
             if (!includeCompleted) {
                 sql += ` AND status != 'completed'`;
+            }
+
+            if (!includeExpired) {
+                sql += ` AND status != 'expired'`;
             }
 
             if (eventType) {

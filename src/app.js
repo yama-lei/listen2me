@@ -12,6 +12,7 @@ const AIAnalysisService = require('./services/aiAnalysisService');
 const SchedulerService = require('./services/schedulerService');
 const RSSService = require('./services/rssService');
 const WebSocketService = require('./services/websocketService');
+const LoggingService = require('./services/loggingService');
 
 class Listen2MeApp {
     constructor() {
@@ -23,6 +24,7 @@ class Listen2MeApp {
         this.schedulerService = null;
         this.rssService = null;
         this.websocketService = null;
+        this.loggingService = null;
         
         this.config = {
             PORT: process.env.WEBSOCKET_PORT || 8081,  // 现在主端口就是WebSocket端口
@@ -37,6 +39,8 @@ class Listen2MeApp {
             AI_ANALYSIS_INTERVAL_MINUTES: process.env.AI_ANALYSIS_INTERVAL_MINUTES,
             AI_CONTEXT_WINDOW_HOURS: process.env.AI_CONTEXT_WINDOW_HOURS,
             AI_MAX_MESSAGES_PER_ANALYSIS: process.env.AI_MAX_MESSAGES_PER_ANALYSIS,
+            AI_LONG_MESSAGE_THRESHOLD: process.env.AI_LONG_MESSAGE_THRESHOLD,
+            AI_SHORT_MESSAGE_BATCH_SIZE: process.env.AI_SHORT_MESSAGE_BATCH_SIZE,
             RSS_TITLE: process.env.RSS_TITLE,
             RSS_DESCRIPTION: process.env.RSS_DESCRIPTION,
             RSS_BASE_URL: process.env.RSS_BASE_URL
@@ -50,23 +54,26 @@ class Listen2MeApp {
             // 初始化数据库
             this.database = new Database(this.config.DATABASE_PATH);
             
+            // 初始化日志服务
+            this.loggingService = new LoggingService(this.config);
+            
             // 初始化消息过滤器
             this.messageFilter = new MessageFilter(this.config);
             
             // 初始化消息控制器
-            this.messageController = new MessageController(this.database, this.messageFilter);
+            this.messageController = new MessageController(this.database, this.messageFilter, this.loggingService);
             
             // 初始化AI分析服务
-            this.aiAnalysisService = new AIAnalysisService(this.config, this.database);
+            this.aiAnalysisService = new AIAnalysisService(this.config, this.database, this.loggingService);
             
             // 初始化调度服务
-            this.schedulerService = new SchedulerService(this.aiAnalysisService, this.config);
+            this.schedulerService = new SchedulerService(this.aiAnalysisService, this.config, this.database);
             
             // 初始化RSS服务
             this.rssService = new RSSService(this.config, this.database);
             
             // 初始化WebSocket服务
-            this.websocketService = new WebSocketService(this.config, this.database, this.messageFilter, this.messageController);
+            this.websocketService = new WebSocketService(this.config, this.database, this.messageFilter, this.messageController, this.loggingService);
             
             // 设置Express中间件
             this.setupMiddlewares();
@@ -131,8 +138,8 @@ class Listen2MeApp {
 
         this.app.get('/api/events', async (req, res) => {
             try {
-                const { limit = 20, type } = req.query;
-                const events = await this.database.getRecentEvents(parseInt(limit), type);
+                const { limit = 20, type, includeExpired = false } = req.query;
+                const events = await this.database.getRecentEvents(parseInt(limit), type, includeExpired === 'true');
                 res.json(events);
             } catch (error) {
                 console.error('获取事件失败:', error);
@@ -189,14 +196,39 @@ class Listen2MeApp {
             }
         });
 
+        this.app.post('/api/scheduler/expiration-check', async (req, res) => {
+            try {
+                console.log('手动触发过期事件检查');
+                await this.schedulerService.triggerExpirationCheck();
+                res.json({ success: true, message: '过期事件检查已触发' });
+            } catch (error) {
+                console.error('手动过期检查失败:', error);
+                res.status(500).json({ 
+                    success: false, 
+                    error: error.message 
+                });
+            }
+        });
+
+        this.app.get('/api/events/expired-stats', async (req, res) => {
+            try {
+                const stats = await this.database.getExpiredEventsStats();
+                res.json(stats);
+            } catch (error) {
+                console.error('获取过期事件统计失败:', error);
+                res.status(500).json({ error: '获取过期事件统计失败' });
+            }
+        });
+
         // RSS相关路由
         this.app.get('/rss', async (req, res) => {
             try {
-                const { type, limit, includeCompleted } = req.query;
+                const { type, limit, includeCompleted, includeExpired } = req.query;
                 const rssXml = await this.rssService.generateFeed({
                     eventType: type || null,
                     limit: parseInt(limit) || 50,
-                    includeCompleted: includeCompleted === 'true'
+                    includeCompleted: includeCompleted === 'true',
+                    includeExpired: includeExpired === 'true'
                 });
                 
                 res.set({
@@ -281,6 +313,28 @@ class Listen2MeApp {
             } catch (error) {
                 console.error('获取WebSocket统计失败:', error);
                 res.status(500).json({ error: '获取WebSocket统计失败' });
+            }
+        });
+
+        // 日志相关接口
+        this.app.get('/api/logs/stats', (req, res) => {
+            try {
+                const stats = this.loggingService.getLogStats();
+                res.json(stats);
+            } catch (error) {
+                console.error('获取日志统计失败:', error);
+                res.status(500).json({ error: '获取日志统计失败' });
+            }
+        });
+
+        this.app.post('/api/logs/clean', (req, res) => {
+            try {
+                const { daysToKeep = 30 } = req.body;
+                this.loggingService.cleanOldLogs(daysToKeep);
+                res.json({ success: true, message: `已清理${daysToKeep}天前的日志文件` });
+            } catch (error) {
+                console.error('清理日志失败:', error);
+                res.status(500).json({ error: '清理日志失败' });
             }
         });
 

@@ -6,11 +6,12 @@ const crypto = require('crypto');
  * 处理与NapCat的WebSocket反向连接
  */
 class WebSocketService {
-    constructor(config, database, messageFilter, messageController) {
+    constructor(config, database, messageFilter, messageController, loggingService) {
         this.config = config;
         this.database = database;
         this.messageFilter = messageFilter;
         this.messageController = messageController;
+        this.loggingService = loggingService;
         
         this.wss = null;
         this.clients = new Map(); // 存储连接的客户端
@@ -139,7 +140,12 @@ class WebSocketService {
             // 区分API响应和事件上报
             if (this.isApiResponse(message)) {
                 console.log(`🔄 API响应 ${clientId}:`, message);
-                // API响应不需要处理，只记录
+                // 记录API响应日志
+                this.loggingService.logApiResponse(
+                    { method: 'POST', url: 'websocket' }, 
+                    message, 
+                    0
+                );
                 return;
             }
 

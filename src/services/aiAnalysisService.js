@@ -1,5 +1,6 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const TimeUtils = require('../utils/timeUtils');
 
 // 简单的UUID生成函数
 function uuidv4() {
@@ -15,16 +16,19 @@ function uuidv4() {
  * 负责调用LLM分析消息并识别todo、通知、文娱活动等
  */
 class AIAnalysisService {
-    constructor(config, database) {
+    constructor(config, database, loggingService) {
         this.config = {
             apiBase: config.OPENAI_API_BASE || 'https://api.openai.com/v1',
             apiKey: config.OPENAI_API_KEY,
             model: config.OPENAI_MODEL || 'gpt-3.5-turbo',
             maxMessagesPerAnalysis: parseInt(config.AI_MAX_MESSAGES_PER_ANALYSIS) || 50,
-            contextWindowHours: parseInt(config.AI_CONTEXT_WINDOW_HOURS) || 2
+            contextWindowHours: parseInt(config.AI_CONTEXT_WINDOW_HOURS) || 2,
+            longMessageThreshold: parseInt(config.AI_LONG_MESSAGE_THRESHOLD) || 50,
+            shortMessageBatchSize: parseInt(config.AI_SHORT_MESSAGE_BATCH_SIZE) || 10
         };
         
         this.database = database;
+        this.loggingService = loggingService;
         
         // 验证配置
         if (!this.config.apiKey) {
@@ -64,12 +68,14 @@ class AIAnalysisService {
             // 按群聊分组分析
             const messagesByGroup = this.groupMessagesByGroup(messages);
             const allEvents = [];
+            const processedMessageIds = [];
 
             for (const [groupId, groupMessages] of Object.entries(messagesByGroup)) {
                 console.log(`分析群聊 ${groupId} 的 ${groupMessages.length} 条消息`);
                 
-                const events = await this.analyzeGroupMessages(groupId, groupMessages);
+                const { events, processedIds } = await this.analyzeGroupMessagesWithStrategy(groupId, groupMessages);
                 allEvents.push(...events);
+                processedMessageIds.push(...processedIds);
             }
 
             // 保存分析结果
@@ -78,21 +84,20 @@ class AIAnalysisService {
             }
 
             // 标记消息为已处理
-            const messageIds = messages.map(m => m.id);
-            await this.database.markMessagesProcessed(messageIds);
+            await this.database.markMessagesProcessed(processedMessageIds);
 
             // 更新分析任务状态
-            await this.database.recordAnalysisTask(taskId, 'completed', messages.length, allEvents.length);
+            await this.database.recordAnalysisTask(taskId, 'completed', processedMessageIds.length, allEvents.length);
             
             // 更新统计信息
-            await this.database.updateStat('last_analysis_time', new Date().toISOString());
+            await this.database.updateStat('last_analysis_time', TimeUtils.getBeijingTimeISO());
             await this.database.updateStat('total_events_found', allEvents.length);
 
-            console.log(`AI分析完成: 处理 ${messages.length} 条消息，识别 ${allEvents.length} 个事件`);
+            console.log(`AI分析完成: 处理 ${processedMessageIds.length} 条消息，识别 ${allEvents.length} 个事件`);
             
             return {
                 taskId,
-                processed: messages.length,
+                processed: processedMessageIds.length,
                 events: allEvents
             };
 
@@ -119,6 +124,84 @@ class AIAnalysisService {
     }
 
     /**
+     * 使用新策略分析群聊消息
+     */
+    async analyzeGroupMessagesWithStrategy(groupId, messages) {
+        if (!this.config.apiKey) {
+            console.warn('未配置API密钥，跳过AI分析');
+            return { events: [], processedIds: [] };
+        }
+
+        const allEvents = [];
+        const processedIds = [];
+        
+        // 按时间排序消息
+        const sortedMessages = messages.sort((a, b) => a.timestamp - b.timestamp);
+        
+        // 分离长消息和短消息
+        const longMessages = [];
+        const shortMessages = [];
+        
+        for (const message of sortedMessages) {
+            if (message.is_admin_message || this.isLongMessage(message.message_content)) {
+                longMessages.push(message);
+            } else {
+                shortMessages.push(message);
+            }
+        }
+        
+        // 处理长消息（包括管理员消息）- 立即分析
+        for (const message of longMessages) {
+            try {
+                console.log(`立即分析长消息/管理员消息: ${message.id}`);
+                const events = await this.analyzeGroupMessages(groupId, [message]);
+                allEvents.push(...events);
+                processedIds.push(message.id);
+            } catch (error) {
+                console.error(`分析长消息失败:`, error);
+                processedIds.push(message.id); // 即使失败也标记为已处理
+            }
+        }
+        
+        // 处理短消息 - 批量分析
+        if (shortMessages.length > 0) {
+            const batches = this.createBatches(shortMessages, this.config.shortMessageBatchSize);
+            
+            for (const batch of batches) {
+                try {
+                    console.log(`批量分析短消息: ${batch.length} 条`);
+                    const events = await this.analyzeGroupMessages(groupId, batch);
+                    allEvents.push(...events);
+                    processedIds.push(...batch.map(m => m.id));
+                } catch (error) {
+                    console.error(`批量分析短消息失败:`, error);
+                    processedIds.push(...batch.map(m => m.id)); // 即使失败也标记为已处理
+                }
+            }
+        }
+        
+        return { events: allEvents, processedIds };
+    }
+
+    /**
+     * 检查是否为长消息
+     */
+    isLongMessage(messageContent) {
+        return messageContent && messageContent.length > this.config.longMessageThreshold;
+    }
+
+    /**
+     * 创建消息批次
+     */
+    createBatches(messages, batchSize) {
+        const batches = [];
+        for (let i = 0; i < messages.length; i += batchSize) {
+            batches.push(messages.slice(i, i + batchSize));
+        }
+        return batches;
+    }
+
+    /**
      * 分析特定群聊的消息
      */
     async analyzeGroupMessages(groupId, messages) {
@@ -132,7 +215,13 @@ class AIAnalysisService {
             const context = this.buildAnalysisContext(messages);
             
             // 调用LLM分析
-            const analysis = await this.callLLM(context);
+            const analysisContext = {
+                messageCount: messages.length,
+                groupId: groupId,
+                groupName: messages.length > 0 ? messages[0].group_name : null,
+                messageIds: messages.map(m => m.id)
+            };
+            const analysis = await this.callLLM(context, analysisContext);
             
             // 解析分析结果
             const events = this.parseAnalysisResult(analysis, groupId, messages);
@@ -153,9 +242,10 @@ class AIAnalysisService {
         let context = '以下是最近的群聊消息记录：\n\n';
         
         sortedMessages.forEach((message, index) => {
-            const time = new Date(message.timestamp * 1000).toLocaleString('zh-CN');
+            const time = TimeUtils.timestampToBeijingString(message.timestamp);
             const nickname = message.sender_nickname || `用户${message.user_id}`;
-            context += `[${time}] ${nickname}: ${message.message_content}\n`;
+            //context += `[${time}] ${nickname}: ${message.message_content}\n`;
+            context += `${nickname} 于 ${time} 发送了消息: ${message.message_content}\n`;
         });
         
         return context;
@@ -164,62 +254,136 @@ class AIAnalysisService {
     /**
      * 调用LLM进行分析
      */
-    async callLLM(context) {
-        const prompt = `你是一个智能助手，专门分析群聊消息并识别其中的待办事项、通知和文娱活动。
+    async callLLM(context, analysisContext = {}) {
+        const systemPrompt = `
+<task>
+  <role>
+    你是一个智能助手，专门分析群聊消息并识别其中的待办事项、通知和文娱活动。
+  </role>
 
-请分析以下群聊记录，识别出其中可能包含的：
-1. 待办事项 (todo) - 需要完成的任务、作业、工作等
-2. 通知 (notification) - 重要信息、公告、提醒等
-3. 文娱活动 (entertainment) - 聚会、游戏、娱乐活动等
+  <responsibilities>
+    <item>仔细分析群聊消息内容</item>
+    <item>识别其中的待办事项 (todo)、通知 (notification)、文娱活动 (entertainment)</item>
+    <item>提取关键信息，如截止时间、优先级</item>
+    <item>以结构化的 JSON 格式返回结果</item>
+  </responsibilities>
 
-对于每个识别出的项目，请提供：
-- 类型 (todo/notification/entertainment)
-- 标题 (简短描述)
-- 详细描述
-- 置信度 (0-1之间的数值)
-- 优先级 (low/medium/high)
-- 截止时间 (如果有的话，格式：YYYY-MM-DD HH:mm:ss)
+  <rules>
+    <item>一个完整的事情必须只写成一个事件，不要拆分成多个</item>
+    <item>如果消息中没有明确的事件，请返回空数组</item>
+    <item>不要为了填充而强行创建事件</item>
+    <item>当前时间为北京时间 ${TimeUtils.getBeijingTimeString()}</item>
+  </rules>
 
-请以JSON格式返回结果，格式如下：
-\`\`\`json
+  <instructions>
+    <step>分析群聊记录，识别以下类别：</step>
+    <categories>
+      <category name="todo">需要完成的任务、作业、工作，若有请给出截止时间</category>
+      <category name="notification">重要信息、公告、提醒，若有请给出截止时间</category>
+      <category name="entertainment">可选的活动，如音乐会、讲座、展览、活动等</category>
+    </categories>
+  </instructions>
+
+  <output_format>
+    <json_example>
+      <![CDATA[
 {
   "events": [
     {
       "type": "todo|notification|entertainment",
       "title": "简短标题",
-      "description": "详细描述",
-      "confidence": 0.8,
-      "priority": "medium",
-      "due_date": "2024-01-01 10:00:00"
+      "description": "详细描述（建议为消息原文部分）",
+      "priority": "low|medium|high",
+      "due_date": "YYYY-MM-DD HH:mm:ss"
     }
   ]
 }
-\`\`\`
+      ]]>
+    </json_example>
+    <empty_result>
+      <![CDATA[
+{
+  "events": []
+}
+      ]]>
+    </empty_result>
+  </output_format>
 
-如果没有识别出任何事件，返回空数组。
+  <example>
+    <input>
+      【南京大学庆祝第 41 个教师节大会通知】  
+      @所有人  各位主席好！  
+      接到通知，学校将在9月10日（周三，明天）上午召开庆祝第 41 个教师节大会...  
+    </input>
+    <output>
+      <![CDATA[
+{
+  "events": [
+    {
+      "type": "notification",
+      "title": "南京大学庆祝第 41 个教师节大会通知",
+      "description": "学校将在9月10日（周三）上午召开庆祝第 41 个教师节大会，烦请各学院派【3名】学生会骨干代表参会...",
+      "priority": "medium",
+      "due_date": "2024-09-10 17:00:00"
+    }
+  ]
+}
+      ]]>
+    </output>
+  </example>
 
-群聊记录：
-${context}`;
+  <input>
+    群聊记录：  
+    ${context}
+  </input>
+</task>
+`;
 
-        const response = await axios.post(`${this.config.apiBase}/chat/completions`, {
+        const requestData = {
             model: this.config.model,
             messages: [
                 {
+                    role: 'system',
+                    content: systemPrompt
+                },
+                {
                     role: 'user',
-                    content: prompt
+                    content: userPrompt
                 }
             ],
             temperature: 0.3,
             max_tokens: 2000
-        }, {
-            headers: {
-                'Authorization': `Bearer ${this.config.apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            timeout: 30000
-        });
+        };
 
-        return response.data.choices[0].message.content;
+        const startTime = Date.now();
+        
+        try {
+            const response = await axios.post(`${this.config.apiBase}/chat/completions`, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${this.config.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            const duration = Date.now() - startTime;
+            
+            // 记录AI请求日志
+            this.loggingService.logAiRequest(requestData, response.data, duration, analysisContext);
+
+            return response.data.choices[0].message.content;
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            
+            // 记录AI请求错误日志
+            this.loggingService.logAiRequest(requestData, { error: error.message }, duration, analysisContext);
+            this.loggingService.logError(error, {
+                context: 'AI分析请求失败',
+                analysisContext
+            });
+            
+            throw error;
+        }
     }
 
     /**
@@ -255,6 +419,9 @@ ${context}`;
                     return;
                 }
 
+                // 获取群聊名称（从源消息中获取）
+                const groupName = sourceMessages.length > 0 ? sourceMessages[0].group_name : null;
+                
                 // 构建事件对象
                 const eventObj = {
                     event_type: event.type,
@@ -263,7 +430,7 @@ ${context}`;
                     content: event.description,
                     source_messages: sourceMessageIds,
                     group_id: parseInt(groupId),
-                    confidence: Math.max(0, Math.min(1, event.confidence || 0.5)),
+                    group_name: groupName,
                     priority: ['low', 'medium', 'high'].includes(event.priority) ? event.priority : 'medium',
                     due_date: this.parseDueDate(event.due_date)
                 };
