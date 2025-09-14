@@ -171,7 +171,9 @@ class AdminService {
             await this.sendMessageToAdmin(helpMessage);
             return { status: 'processed', command: 'help' };
         }
-
+        if(this.isAddCommand(trimmedCommand)) {
+            return await this.handleAddCommand(trimmedCommand);
+        }
         // 处理未知命令
         await this.sendMessageToAdmin(`❌ 未知命令: ${command}\n使用 /help 查看可用命令`);
         return { status: 'processed', command: 'unknown' };

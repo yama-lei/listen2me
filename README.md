@@ -5,8 +5,13 @@
 Listen2Me 是一个基于 NapCat 和 OneBot 11 协议的自动化todo生成平台。通过监听QQ群聊消息，使用AI分析技术自动识别和提取待办事项、通知和文娱活动等信息，并提供RSS订阅功能。
 
 ## 主要功能
-1. 监听群聊并总结自己需要的东西
-2. 练习使用docker，熟悉OneBot协议和NapCat框架的baseline project （just for fun）
+1. **群聊监听** - 自动监听指定QQ群聊消息
+2. **AI分析** - 使用大语言模型识别待办事项、通知和文娱活动
+3. **管理员私聊** - 支持管理员通过私聊添加和管理事件
+4. **RSS订阅** - 提供RSS订阅功能，支持分类订阅
+5. **Web管理界面** - 提供Web界面查看和管理事件
+6. **定时分析** - 自动定时分析群聊消息并提取关键信息
+
 ![首页](pictures/head.png)
 
 ## 快速开始
@@ -37,7 +42,7 @@ NapCat官方文档：https://napneko.github.io/
 
 #### 运行listen2me
 
-### 从原码开始构建
+### 从源码开始构建
 
 1. 安装依赖
 
@@ -54,17 +59,27 @@ npm run dev
 npm start
 ```
 ### 使用Docker部署
-#### dokcer的一键部署
-运行start.sh即可构建docker并且运行
+#### Docker一键部署
+运行 `./start.sh` 即可构建Docker镜像并运行容器
 
-#### 1. 构建docker image
-使用docker build . -t '容器的名字'，从dockerfile构建镜像
+#### 1. 构建Docker镜像
+```bash
+docker build . -t listen2me
+```
 
-#### 2. 运行镜像
-运行mkdir -p ./data && docker run -p 8080:8080 -p 8081:8081 -v $(pwd)/data:/app/data test
-
-
-
+#### 2. 运行容器
+```bash
+docker run -d \
+  --name listen2me \
+  -p 8080:8080 \
+  -p 8081:8081 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  --env-file .env \
+  --restart unless-stopped \
+  listen2me
+```
+> 提示：可以通过修改 `-v` 参数来指定数据存储位置
 
 
 
@@ -74,7 +89,13 @@ npm start
 ### .env环境配置
 
 ```env
+# WebSocket配置
+WEBSOCKET_PORT=8081
+WEBSOCKET_HOST=0.0.0.0
+WEBSOCKET_SECRET=
 
+# HTTP管理界面配置
+HTTP_PORT=8080
 
 # 监听的群聊ID列表，用逗号分隔
 LISTEN_GROUP_IDS=123456789,987654321
@@ -85,27 +106,48 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-3.5-turbo
 
 # AI分析配置
-AI_ANALYSIS_INTERVAL_MINUTES=30
+AI_ANALYSIS_INTERVAL_MINUTES=120
 AI_CONTEXT_WINDOW_HOURS=2
 AI_MAX_MESSAGES_PER_ANALYSIS=50
+AI_LONG_MESSAGE_THRESHOLD=50
+AI_SHORT_MESSAGE_BATCH_SIZE=10
 
 # 数据库配置
-
 DATABASE_PATH=./data/listen2me.db
-# 如果是使用docker容器部署，请注意需要外接挂载一个文件夹，比如在项目根目录下运行 mkdir -p ./data && docker run -p 8080:8080 -p 8081:8081 -v $(pwd)/data:/app/data listen2me，即为将$(pwd)/data的卷挂载到docker容器内的/app/data中，实际的数据可以在项目根目录下data/找到
 
 # RSS配置
 RSS_TITLE=Listen2Me Todo Feed
 RSS_DESCRIPTION=Automated todo and events from monitored groups
 RSS_BASE_URL=http://localhost:8080
 
-#管理员qq配置
-ADMIN_ID=1234567
+# 日志配置
+LOG_LEVEL=info
 
+# 管理员账号ID列表，用逗号分隔 (支持多个管理员)
+ADMIN_IDS=1234567,7654321
 ```
 
-### 前端界面
-原生html，在/public/index.html处修改
+### 管理员私聊功能
+
+管理员可以通过私聊与机器人交互：
+
+**可用命令：**
+- `/help` - 显示帮助信息
+- `/all` 或 `ls` - 查看所有事件
+- `/del [事件ID]` 或 `rm [事件ID]` - 删除指定事件
+- `/add [内容]` - 添加新事件（AI分析）
+
+**使用示例：**
+```
+/add 明天下午3点开会讨论项目进度
+/del 123
+/all
+```
+
+### Web管理界面
+- 访问 `http://localhost:8080` 查看Web管理界面
+- 支持查看事件列表、系统状态和统计信息
+- 界面文件位于 `/public/index.html`，可根据需要修改
 ### RSS订阅
 
 系统提供多个RSS订阅端点：
@@ -116,11 +158,19 @@ ADMIN_ID=1234567
 
 ### API接口
 
+**系统接口：**
 - `GET /api/status` - 系统状态
+- `GET /health` - 健康检查
+
+**事件接口：**
 - `GET /api/events` - 获取事件列表
+- `GET /api/events?type=todo` - 获取待办事项
+- `GET /api/events?type=notification` - 获取通知
+- `GET /api/events?type=entertainment` - 获取文娱活动
+
+**分析接口：**
 - `POST /api/analysis/trigger` - 手动触发分析
 - `GET /api/analysis/stats` - 分析统计信息
-- `GET /health` - 健康检查
 
 
 
@@ -131,6 +181,8 @@ ADMIN_ID=1234567
 - `analyzed_events` - AI分析结果
 - `system_stats` - 系统统计信息
 - `analysis_tasks` - 分析任务记录
+
+数据库文件默认存储在 `./data/listen2me.db`
 ### 项目结构
 
 ```
@@ -149,7 +201,22 @@ listen2me/
 └── README.md               # 项目说明
 ```
 
-### TODOs
-- 完善消息类型定义
-- 增加私聊功能，将消息发给给bot，构建私人信息管理
-- 集成通知和推送（目前只支持RSS）
+## 注意事项
+
+1. **权限配置**：确保NapCat有足够的权限访问指定群聊
+2. **API配置**：需要配置有效的OpenAI兼容API密钥
+3. **管理员配置**：在 `.env` 文件中正确配置管理员QQ号
+4. **数据备份**：定期备份 `data` 目录下的数据库文件
+
+## 故障排除
+
+**常见问题：**
+- 如果NapCat连接失败，检查WebSocket配置和端口
+- 如果AI分析失败，检查API密钥和网络连接
+- 如果管理员功能不工作，检查QQ号配置是否正确
+
+## 开发计划
+
+- [ ] 完善消息类型定义
+- [ ] 优化context来提升模型的准确性
+- [ ] 添加事件提醒功能
