@@ -13,10 +13,25 @@ class AdminService {
         this.loggingService = loggingService;
         this.websocketService = websocketService;
         
-        // 管理员账号ID
-        this.adminId = config.ADMIN_ID;
+        // 解析管理员账号ID列表
+        this.adminIds = this.parseAdminIds(config.ADMIN_IDS || config.ADMIN_ID);
         
-        console.log(`管理员服务初始化完成，管理员ID: ${this.adminId}`);
+        console.log(`管理员服务初始化完成，管理员IDs: [${this.adminIds.join(', ')}]`);
+    }
+
+    /**
+     * 解析管理员ID列表
+     * @param {string} adminIdsConfig 管理员ID配置字符串
+     * @returns {number[]} 管理员ID数组
+     */
+    parseAdminIds(adminIdsConfig) {
+        if (!adminIdsConfig) {
+            return [];
+        }
+        
+        return adminIdsConfig.toString().split(',')
+            .map(id => parseInt(id.trim()))
+            .filter(id => !isNaN(id) && id > 0);
     }
 
     /**
@@ -25,9 +40,19 @@ class AdminService {
      * @returns {boolean} 是否为管理员消息
      */
     isAdminMessage(event) {
-        return event.message_type === 'private' && 
-               event.user_id && 
-               parseInt(event.user_id) === parseInt(this.adminId);
+        // 必须是私聊消息
+        if (event.message_type !== 'private') {
+            return false;
+        }
+        
+        // 必须有用户ID
+        if (!event.user_id) {
+            return false;
+        }
+        
+        // 检查是否在管理员ID列表中
+        const userId = parseInt(event.user_id);
+        return this.adminIds.includes(userId);
     }
 
     /**
@@ -62,19 +87,17 @@ class AdminService {
                 return await this.handleAdminCommand(messageText);
             }
 
-            // 分析管理员消息
-            const analysisResult = await this.analyzeAdminMessage(event);
-            
-            // 发送分析结果给管理员
-            if (analysisResult.events && analysisResult.events.length > 0) {
-                await this.sendAnalysisResultToAdmin(analysisResult);
-            } else {
-                await this.sendMessageToAdmin('没有识别到任何待办事项、通知或活动。');
+            // 检查是否为add指令
+            if (this.isAddCommand(messageText)) {
+                return await this.handleAddCommand(messageText);
             }
 
+            // 对于其他消息，只记录日志，不进行AI分析，也不保存到未处理队列
+            console.log(`管理员发送了非指令消息，已记录日志但不进行分析: ${messageText.substring(0, 50)}...`);
+            
             return { 
-                status: 'processed', 
-                events_found: analysisResult.events?.length || 0 
+                status: 'logged_only', 
+                reason: 'non_command_message'
             };
 
         } catch (error) {
@@ -99,7 +122,8 @@ class AdminService {
     deleteCommandList = ['del', '/del','delete','/delete','rm'];
     helpCommandList = ['help', '/help'];
     allCommandList = ['all', '/all','ls'];
-    commandList = [...this.deleteCommandList, ...this.helpCommandList, ...this.allCommandList];
+    addCommandList = ['add', '/add'];
+    commandList = [...this.deleteCommandList, ...this.helpCommandList, ...this.allCommandList, ...this.addCommandList];
 
     isCommand(messageText) {
         const trimmedText = messageText.trim().toLowerCase();
@@ -141,7 +165,8 @@ class AdminService {
                 '📋 可用命令列表:',
                 '1. 查看全部事件: /all, all, ls',
                 '2. 删除事件: /del [事件ID], rm [事件ID]',
-                '3. 帮助信息: /help, help'
+                '3. 添加事件: /add [内容], add [内容]',
+                '4. 帮助信息: /help, help'
             ].join('\n');
             await this.sendMessageToAdmin(helpMessage);
             return { status: 'processed', command: 'help' };
@@ -150,6 +175,78 @@ class AdminService {
         // 处理未知命令
         await this.sendMessageToAdmin(`❌ 未知命令: ${command}\n使用 /help 查看可用命令`);
         return { status: 'processed', command: 'unknown' };
+    }
+
+    /**
+     * 检查是否为add指令
+     * @param {string} messageText 消息文本
+     * @returns {boolean} 是否为add指令
+     */
+    isAddCommand(messageText) {
+        const trimmedText = messageText.trim().toLowerCase();
+        const firstWord = trimmedText.split(' ')[0];
+        return this.addCommandList.includes(firstWord);
+    }
+
+    /**
+     * 处理add指令
+     * @param {string} messageText 消息文本
+     * @returns {Promise<Object>} 处理结果
+     */
+    async handleAddCommand(messageText) {
+        const trimmedText = messageText.trim();
+        const parts = trimmedText.split(' ');
+        
+        // 移除第一个命令词
+        parts.shift();
+        const content = parts.join(' ').trim();
+        
+        if (!content) {
+            await this.sendMessageToAdmin('❌ 请在add指令后添加内容，格式: add [内容]');
+            return { status: 'processed', command: 'add', success: false, reason: 'empty_content' };
+        }
+
+        try {
+            // 构建模拟事件对象用于AI分析
+            const mockEvent = {
+                message_id: Date.now(), // 使用时间戳作为临时ID
+                user_id: this.adminIds[0], // 使用第一个管理员ID
+                message_type: 'private',
+                raw_message: content,
+                message: content,
+                time: Math.floor(Date.now() / 1000),
+                sender: {
+                    nickname: '管理员'
+                }
+            };
+
+            // 分析管理员消息
+            const analysisResult = await this.analyzeAdminMessage(mockEvent);
+            
+            // 发送分析结果给管理员
+            if (analysisResult.events && analysisResult.events.length > 0) {
+                await this.sendAnalysisResultToAdmin(analysisResult);
+                return { 
+                    status: 'processed', 
+                    command: 'add',
+                    success: true,
+                    events_found: analysisResult.events.length 
+                };
+            } else {
+                await this.sendMessageToAdmin('没有识别到任何待办事项、通知或活动。');
+                return { 
+                    status: 'processed', 
+                    command: 'add',
+                    success: false,
+                    reason: 'no_events_found' 
+                };
+            }
+
+        } catch (error) {
+            console.error('处理add指令失败:', error);
+            await this.sendMessageToAdmin(`处理add指令时发生错误: ${error.message}`);
+            return { status: 'error', command: 'add', error: error.message };
+        }
     }
 
     /**
@@ -358,9 +455,10 @@ class AdminService {
     /**
      * 发送消息给管理员
      * @param {string} message 消息内容
+     * @param {number} targetAdminId 目标管理员ID，如果不指定则发送给第一个管理员
      */
-    async sendMessageToAdmin(message) {
-        if (!this.adminId) {
+    async sendMessageToAdmin(message, targetAdminId = null) {
+        if (this.adminIds.length === 0) {
             console.warn('未配置管理员ID，无法发送消息');
             return false;
         }
@@ -370,12 +468,15 @@ class AdminService {
             return false;
         }
 
+        // 确定目标管理员ID
+        const adminId = targetAdminId || this.adminIds[0];
+
         try {
             // 构建发送私聊消息的请求
             const requestData = {
                 action: 'send_private_msg',
                 params: {
-                    user_id: this.adminId.toString(),
+                    user_id: adminId.toString(),
                     message: [
                         {
                             type: 'text',
@@ -391,7 +492,7 @@ class AdminService {
             const success = this.websocketService.broadcastToClients(requestData);
             
             if (success > 0) {
-                console.log(`消息已发送给管理员: ${message.substring(0, 50)}...`);
+                console.log(`消息已发送给管理员 ${adminId}: ${message.substring(0, 50)}...`);
                 return true;
             } else {
                 console.warn('没有可用的WebSocket连接发送消息');
@@ -402,7 +503,7 @@ class AdminService {
             console.error('发送消息给管理员失败:', error);
             this.loggingService.logError(error, {
                 context: 'send_message_to_admin',
-                admin_id: this.adminId,
+                admin_id: adminId,
                 message: message.substring(0, 100)
             });
             return false;
@@ -508,9 +609,10 @@ class AdminService {
      */
     getStatus() {
         return {
-            admin_id: this.adminId,
+            admin_ids: this.adminIds,
+            admin_count: this.adminIds.length,
             websocket_available: !!this.websocketService,
-            service_enabled: !!this.adminId
+            service_enabled: this.adminIds.length > 0
         };
     }
 }

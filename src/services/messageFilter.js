@@ -46,7 +46,8 @@ class MessageFilter {
                 return false;
             }
         }
-        // 对于私聊消息，直接通过（由管理员服务进一步处理）
+        // 对于私聊消息，只处理管理员消息（由管理员服务进一步处理）
+        // 非管理员的私聊消息在这里就会被过滤掉
 
         // 检查消息内容
         if (!event.message || (!event.raw_message && !event.message)) {

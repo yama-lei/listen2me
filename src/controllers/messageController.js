@@ -25,13 +25,18 @@ class MessageController {
             // 记录接收到的事件
             console.log(`接收到事件: ${event.post_type} - ${event.message_type || 'N/A'}`);
             
-            // 检查是否为管理员私聊消息
-            if (this.adminService && this.adminService.isAdminMessage(event)) {
-                console.log('检测到管理员私聊消息，交由管理员服务处理');
-                return await this.adminService.handleAdminMessage(event);
+            // 对于私聊消息，只处理管理员消息
+            if (event.message_type === 'private') {
+                if (this.adminService && this.adminService.isAdminMessage(event)) {
+                    console.log('检测到管理员私聊消息，交由管理员服务处理');
+                    return await this.adminService.handleAdminMessage(event);
+                } else {
+                    console.log(`忽略非管理员私聊消息，用户ID: ${event.user_id}`);
+                    return { status: 'ignored', reason: 'non_admin_private_message' };
+                }
             }
 
-            // 检查是否应该处理该事件
+            // 检查是否应该处理该事件（群消息）
             if (!this.messageFilter.shouldProcessEvent(event)) {
                 // 记录被忽略的消息
                 const messageData = this.messageFilter.transformEventToMessage(event);

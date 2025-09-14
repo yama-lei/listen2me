@@ -284,6 +284,7 @@ class AIAnalysisService {
     <item>如果消息中没有明确的事件，请返回空数组</item>
     <item>不要为了填充而强行创建事件</item>
     <item>当前时间为北京时间 ${TimeUtils.getBeijingTimeString()}</item>
+    <item>如果发现完全相同的消息，比如时间、内容都完全相同，请不要重复创建事件</item>
   </rules>
 
   <instructions>

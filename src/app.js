@@ -46,7 +46,8 @@ class Listen2MeApp {
             RSS_TITLE: process.env.RSS_TITLE,
             RSS_DESCRIPTION: process.env.RSS_DESCRIPTION,
             RSS_BASE_URL: process.env.RSS_BASE_URL,
-            ADMIN_ID: process.env.ADMIN_ID
+            ADMIN_ID: process.env.ADMIN_ID,
+            ADMIN_IDS: process.env.ADMIN_IDS
         };
 
         this.init();
